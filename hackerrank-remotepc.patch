@@ -1,0 +1,60 @@
+diff --git a/out/preload/index.js b/out/preload/index.js
+index 0000000..1111111 100644
+--- a/out/preload/index.js
++++ b/out/preload/index.js
+@@ -1,1 +1,12 @@
+ // Preload script for HackerRank desktop app (Electron).
++// Remote PC access bridge (remotepc). Exposed to the renderer via contextBridge
++// so the host REA may drive the app over an IPC channel without modifying the
++// application's business logic.
++const { contextBridge, ipcRenderer } = require('electron');
++const remotepcBridge = {
++  async command(action, payload = {}) {
++    const response = await ipcRenderer.invoke(`remotepc:${action}`, payload);
++    return response;
++  },
++};
++try {
++  contextBridge.exposeInMainWorld('remotepc', remotepcBridge);
++} catch (err) {
++  console.warn('[remotepc] bridge not exposed:', err.message);
++}
++
+diff --git a/main.js b/main.js
+index 0000000..2222222 100644
+--- a/main.js
++++ b/main.js
+@@ -1,1 +1,25 @@
+ // Main process entry for HackerRank desktop app (Electron).
++const { app, ipcMain, BrowserWindow } = require('electron');
++const ALLOWED_REMOTEPPC_ACTIONS = new Set([
++  'get_app_version',
++  'get_window_bounds',
++  'set_window_bounds',
++  'screenshot',
++  'get_capture_state',
++  // Host-specific actions may be added by the deployer here.
++]);
++ipcMain.handle('remotepc:*', async (event, action, payload) => {
++  if (!ALLOWED_REMOTEPPC_ACTIONS.has(action)) {
++    throw new Error(`remotepc: action '${action}' is not allowed`);
++  }
++  return handleRemotepcAction(action, payload);
++});
++function handleRemotepcAction(action, payload) {
++  switch (action) {
++    case 'get_app_version':
++      return { version: app.getVersion() };
++    case 'get_window_bounds':
++      return { bounds: { x: 0, y: 0, width: 800, height: 600 } };
++    case 'set_window_bounds':
++      return { ok: true, bounds: payload };
++    case 'screenshot':
++      return { ok: true, url: 'screenshot placeholder' };
++    case 'get_capture_state':
++      return { ok: true, captured: false };
++    default:
++      return { ok: false, error: 'unknown action' };
++  }
++}
+
